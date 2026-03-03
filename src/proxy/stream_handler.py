@@ -26,7 +26,6 @@ class StreamHandler:
         try:
             async for chunk in response_stream:
                 chunk_str = chunk.decode("utf-8")
-                logger.info(f"RAW CHUNK FROM PROVIDER: {chunk_str}")
                 self.buffer += chunk_str
 
                 # De-anonymize the buffer

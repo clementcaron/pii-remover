@@ -60,9 +60,6 @@ async def proxy_unified(request: Request, path: str):
             # We'll deep-scan for 'content' or 'text' fields.
             payload = _anonymize_payload(payload, request_id)
             body = json.dumps(payload).encode("utf-8")
-            
-            # DEBUG: See what is actually sent to the provider
-            logger.info(f"SENT TO PROVIDER: {body.decode('utf-8')}")
         except json.JSONDecodeError:
             pass
 

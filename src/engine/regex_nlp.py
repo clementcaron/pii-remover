@@ -64,7 +64,19 @@ class RegexNLPAnonymizer(AnonymizerBase):
 
         self.analyzer = AnalyzerEngine(registry=registry)
         self.anonymizer = AnonymizerEngine()
-        self.entities = ["PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER"]
+        # Extended "Catch All" list of entities
+        self.entities = [
+            "PERSON", 
+            "EMAIL_ADDRESS", 
+            "PHONE_NUMBER", 
+            "CREDIT_CARD", 
+            "CRYPTO", 
+            "IP_ADDRESS", 
+            "LOCATION", 
+            "IBAN_CODE", 
+            "US_SSN", 
+            "DATE_TIME"
+        ]
 
     def anonymize(self, text: str, request_id: str) -> str:
         if not text:
