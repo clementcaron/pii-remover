@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     HOST: str = "0.0.0.0"
     PORT: int = 8000
+    USE_GPU: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

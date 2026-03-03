@@ -7,13 +7,13 @@ import httpx
 
 from src.core.config import settings
 from src.core.logger import logger
-from src.engine.regex_nlp import RegexNLPAnonymizer
+from src.engine.nuner import NuNERAnonymizer
 from src.proxy.client import ProxyClient
 from src.proxy.stream_handler import StreamHandler
 from src.proxy.state import state_manager
 
 router = APIRouter()
-anonymizer = RegexNLPAnonymizer()
+anonymizer = NuNERAnonymizer()
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def proxy_unified(request: Request, path: str):
@@ -59,6 +59,7 @@ async def proxy_unified(request: Request, path: str):
             # This is complex as it depends on provider schema.
             # We'll deep-scan for 'content' or 'text' fields.
             payload = _anonymize_payload(payload, request_id)
+            logger.debug(f"[{request_id}] SENT TO PROVIDER: {payload}")
             body = json.dumps(payload).encode("utf-8")
         except json.JSONDecodeError:
             pass
@@ -115,18 +116,44 @@ async def proxy_unified(request: Request, path: str):
         raise HTTPException(status_code=502, detail="Bad Gateway")
 
 
-def _anonymize_payload(data: any, request_id: str) -> any:
+def _anonymize_payload(payload: any, request_id: str) -> any:
     """
-    Recursively scans and anonymizes 'content' or 'text' fields in LLM payloads.
+    Optimized version that collects all text fields and anonymizes them in a single batch.
     """
-    if isinstance(data, dict):
-        new_dict = {}
-        for k, v in data.items():
-            if k in ["content", "text"] and isinstance(v, str):
-                new_dict[k] = anonymizer.anonymize(v, request_id)
-            else:
-                new_dict[k] = _anonymize_payload(v, request_id)
-        return new_dict
-    elif isinstance(data, list):
-        return [_anonymize_payload(item, request_id) for item in data]
-    return data
+    # 1. Collect all paths and values that need anonymization
+    text_items = [] # list of (parent_container, key_or_index, value)
+
+    def _collect(data, target_list):
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if k in ["content", "text"] and isinstance(v, str):
+                    target_list.append((data, k, v))
+                else:
+                    _collect(v, target_list)
+        elif isinstance(data, list):
+            for i, item in enumerate(data):
+                if isinstance(item, str) and "role" in data[i-1 if i > 0 else 0]: # Simplified check for content-only lists
+                    target_list.append((data, i, item))
+                else:
+                    _collect(item, target_list)
+
+    # Initial pass to find all strings
+    _collect(payload, text_items)
+
+    if not text_items:
+        return payload
+
+    # 2. Batch anonymize
+    texts_to_process = [item[2] for item in text_items]
+    
+    # Check if anonymizer supports batching
+    if hasattr(anonymizer, "anonymize_batch"):
+        anonymized_texts = anonymizer.anonymize_batch(texts_to_process, request_id)
+    else:
+        anonymized_texts = [anonymizer.anonymize(t, request_id) for t in texts_to_process]
+
+    # 3. Re-inject
+    for (container, key, _), anonymized_val in zip(text_items, anonymized_texts):
+        container[key] = anonymized_val
+
+    return payload

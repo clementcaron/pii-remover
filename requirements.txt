@@ -9,3 +9,8 @@ python-dotenv==1.0.1
 python-multipart==0.0.9
 setuptools==69.1.1
 phonenumbers==8.13.32
+fast-gliner
+onnxruntime-gpu
+psutil
+tabulate
+torch
