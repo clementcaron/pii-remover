@@ -9,27 +9,67 @@ import statistics
 from src.engine.regex_nlp import RegexNLPAnonymizer
 from src.engine.nuner import NuNERAnonymizer
 
-SAMPLE_TEXTS = [
-    "My name is John Doe, I live in New York and my email is john.doe@example.com.",
-    "Call me at +1-555-0123. My credit card is 1234-5678-9012-3456.",
-    "The IBAN for the transfer is DE89370400440532013000. Date: 2023-10-25.",
-    "Bitcoin address: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa. IP: 192.168.1.1",
-    "Social security number: 000-00-0000. My office is located in Paris, France."
+GOLD_STANDARD_DATASET = [
+    {
+        "text": "My name is John Doe, I live in New York and my email is john.doe@example.com.",
+        "entities": ["John Doe", "New York", "john.doe@example.com"]
+    },
+    {
+        "text": "Call me at +1-555-0123. My credit card is 1234-5678-9012-3456.",
+        "entities": ["+1-555-0123", "1234-5678-9012-3456"]
+    },
+    {
+        "text": "The IBAN for the transfer is DE89370400440532013000. Date: 2023-10-25.",
+        "entities": ["DE89370400440532013000", "2023-10-25"]
+    },
+    {
+        "text": "Bitcoin address: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa. IP: 192.168.1.1",
+        "entities": ["1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", "192.168.1.1"]
+    },
+    {
+        "text": "Social security number: 000-00-0000. My office is located in Paris, France.",
+        "entities": ["000-00-0000", "Paris, France"]
+    },
+    {
+        "text": "Social security number: 000-00-0000. My office is located in Paris, France.",
+        "entities": ["000-00-0000", "Paris, France"]
+    }
 ]
 
 def get_memory_usage():
     process = psutil.Process(os.getpid())
     return process.memory_info().rss / (1024 * 1024)  # MB
 
-def run_benchmark(engine, name, iterations=10):
+def calculate_recall(engine, dataset):
+    correct_detections = 0
+    total_entities = 0
+    
+    for item in dataset:
+        req_id = str(uuid.uuid4())
+        anonymized = engine.anonymize(item["text"], req_id)
+        
+        # Check if original entities are still present in anonymized text
+        for entity in item["entities"]:
+            total_entities += 1
+            if entity not in anonymized:
+                correct_detections += 1
+            else:
+                print(f"DEBUG: Failed to detect '{entity}' in '{item['text']}'")
+                
+    return (correct_detections / total_entities) * 100 if total_entities > 0 else 0
+
+def run_benchmark(engine, name, iterations=5):
     print(f"\nBenchmarking {name}...")
     total_latencies = []
     inference_times = []
     processing_times = []
     
-    start_total_bench = time.perf_counter()
+    # Measure Recall first
+    recall = calculate_recall(engine, GOLD_STANDARD_DATASET)
+    
     for _ in range(iterations):
-        for text in SAMPLE_TEXTS:
+        for item in GOLD_STANDARD_DATASET:
+            text = item["text"]
             req_id = str(uuid.uuid4())
             start_full = time.perf_counter()
             engine.anonymize(text, req_id)
@@ -40,7 +80,6 @@ def run_benchmark(engine, name, iterations=10):
                 inference_times.append(engine.last_timing.get("inference_ms", 0))
                 processing_times.append(engine.last_timing.get("processing_ms", 0))
     
-    end_total_bench = time.perf_counter()
     mem_after = get_memory_usage()
     
     avg_total = statistics.mean(total_latencies) * 1000
@@ -56,6 +95,7 @@ def run_benchmark(engine, name, iterations=10):
         "Processing (ms)": f"{avg_processing:.2f}",
         "P95 Total (ms)": f"{p95_total:.2f}",
         "Mem (MB)": f"{mem_after:.2f}",
+        "Recall (%)": f"{recall:.1f}%",
     }
 
 if __name__ == "__main__":
@@ -75,6 +115,7 @@ if __name__ == "__main__":
     
     # Benchmark Regex/Spacy (Old)
     try:
+        from src.engine.regex_nlp import RegexNLPAnonymizer
         old_engine = RegexNLPAnonymizer()
         results.append(run_benchmark(old_engine, "RegexNLP (Spacy)"))
     except Exception as e:
@@ -82,31 +123,15 @@ if __name__ == "__main__":
 
     # Benchmark NuNER (New)
     try:
+        from src.engine.nuner import NuNERAnonymizer
         new_engine = NuNERAnonymizer()
         results.append(run_benchmark(new_engine, "NuNER (Sequential)"))
-        
-        # Parallel NuNER
-        print("\nBenchmarking NuNER (Parallel Threads)...")
-        from concurrent.futures import ThreadPoolExecutor
-        start_parallel = time.perf_counter()
-        req_id = str(uuid.uuid4())
-        texts = SAMPLE_TEXTS * 2
-        with ThreadPoolExecutor(max_workers=len(texts)) as executor:
-            list(executor.map(lambda t: new_engine.anonymize(t, req_id), texts))
-        duration = (time.perf_counter() - start_parallel) * 1000
-        results.append({
-            "Engine": "NuNER (Parallel x10)",
-            "Avg Total (ms)": f"{duration:.2f} (total)",
-            "Inference (ms)": "N/A",
-            "Processing (ms)": "N/A",
-            "P95 Total (ms)": "N/A",
-            "Mem (MB)": f"{get_memory_usage():.2f}",
-        })
         
         # Batch NuNER
         print("\nBenchmarking NuNER (Batch)...")
         start_batch = time.perf_counter()
-        # Simulate a large batch
+        texts = [item["text"] for item in GOLD_STANDARD_DATASET] * 2
+        req_id = str(uuid.uuid4())
         new_engine.anonymize_batch(texts, req_id)
         duration = (time.perf_counter() - start_batch) * 1000
         
@@ -117,11 +142,12 @@ if __name__ == "__main__":
             "Processing (ms)": f"{new_engine.last_timing.get('total_processing_ms', 0):.2f}",
             "P95 Total (ms)": "N/A",
             "Mem (MB)": f"{get_memory_usage():.2f}",
+            "Recall (%)": "N/A", # Batch recall is the same as sequential
         })
     except Exception as e:
         print(f"Error benchmarking NuNER: {e}")
 
     print("\n--- Detailed Benchmark Results ---")
-    headers = ["Engine", "Avg Total (ms)", "Inference (ms)", "Processing (ms)", "P95 Total (ms)", "Mem (MB)"]
-    data = [[r[h] for h in headers] for r in results]
+    headers = ["Engine", "Avg Total (ms)", "Inference (ms)", "Processing (ms)", "Recall (%)", "Mem (MB)"]
+    data = [[r.get(h, "N/A") for h in headers] for r in results]
     print(tabulate(data, headers=headers, tablefmt="github"))

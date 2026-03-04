@@ -17,111 +17,65 @@ A lightweight, highly scalable, stateless reverse proxy (AI Gateway) designed to
 - engine/: Anonymization logic using NLP and Regex.
 - proxy/: HTTP client management and SSE stream handling.
 
+## Quick Start (Recommended)
+
+For the easiest setup, use the interactive configuration script. It will auto-detect your hardware (CPU/GPU), help you configure your API keys, and set up your environment automatically.
+
+```bash
+./scripts/interactive_setup.sh
+```
+
 ## Installation
 
 ### Prerequisites
 
 - Python 3.12+
-- uv (recommended) or pip
+- Docker (optional, for containerized deployment)
+- Pytorch compatible GPU (optional, for 20x faster inference)
 
-### Standard Setup
+### Manual Setup
 
-1. Clone the repository and navigate to the root directory.
-2. Create and activate a virtual environment.
-3. Install dependencies:
+If you prefer not to use the interactive script:
+
+1. **Environment**: 
    ```bash
-   pip install -r requirements.txt
-   ```
-4. Download the spaCy model (small model for lower footprint):
-   ```bash
-   python -m spacy download en_core_web_sm
+   cp .env.example .env
+   # Edit .env with your API keys and USE_GPU preference
    ```
 
-### Using uv
+2. **Python Setup**:
+   The automated setup script handles `torch` versions (CPU vs GPU) and pre-downloads the NuNER model weights.
+   ```bash
+   uv venv .venv
+   .venv/bin/python3 scripts/setup.py
+   ```
+
+## Docker Deployment
+
+We recommend using **Docker Compose** for the easiest deployment. It automatically reads your `.env` (configured via `interactive_setup.sh`) to decide whether to build a CPU or GPU-accelerated version.
 
 ```bash
-uv pip install -r requirements.txt
-uv pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+# Build and start the container
+docker compose up -d --build
+
+# View logs
+docker compose logs -f
+
+# Stop the proxy
+docker compose down
 ```
-
-## Configuration
-
-Copy the example environment file and fill in your API keys:
-
-```bash
-cp .env.example .env
-```
-
-Key variables:
-- OPENAI_API_KEY: Your OpenAI API key.
-- ANTHROPIC_API_KEY: Your Anthropic API key.
-- GEMINI_API_KEY: Your Google Gemini API key.
-- PROXY_AUTH_TOKEN: A secure token you choose to protect your proxy.
-
-## Running the Proxy
-
-```bash
-python -m src.main
-```
-
-The server will start on http://0.0.0.0:8000.
 
 ## Usage Example
 
-Send an authenticated request to the proxy:
+Once the proxy is running (default `http://localhost:8000`), you can route LLM requests through it.
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Authorization: Bearer your-proxy-token" \
+  -H "Authorization: Bearer your-proxy-auth-token" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-3.5-turbo",
     "messages": [{"role": "user", "content": "My name is John Doe and my email is john@example.com."}],
     "stream": false
   }'
-```
-
-## Performance & Optimizations
-
-As of the latest update, the proxy transitioned to the **NuNER_Zero** model for superior zero-shot PII detection. Below are the findings from our performance benchmarking:
-
-### Zero-Shot Detection (NuNER)
-| Platform | Sequential Latency (per msg) | Batch Latency (10 msgs) |
-| :--- | :--- | :--- |
-| **CPU (i7/i9 equivalent)** | ~310 ms | ~1,730 ms (173ms/msg) |
-| **GPU (RTX 4080 Super)** | **~65 ms** | **~85 ms (8.5ms/msg)** |
-
-### Key Optimization: Batch Inference
-The proxy implements **Batch Anonymization** by default.
-- **Why?** LLM requests often include long chat histories (10+ messages). Processing these sequentially (one by one) would create a massive bottleneck.
-- **Benefit**: By grouping all text fragments into a single model pass, we achieve up to **2x speedup on CPU** and a massive **20x speedup on GPU** compared to sequential processing.
-- **Implementation**: See `anonymizer.anonymize_batch` in `engine/nuner.py` and the refactored `_anonymize_payload` in `api/routes.py`.
-
-### GPU Acceleration
-If you have an NVIDIA GPU, you can significantly reduce latency by enabling GPU support:
-1. Update your `.env`: `USE_GPU=true`.
-2. Install the CUDA-enabled version of PyTorch: 
-   ```bash
-   uv pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
-   uv pip install onnxruntime-gpu
-   ```
-
-### Profiling
-To see exact timing per request and detailed PII detection logs:
-```bash
-LOG_LEVEL=DEBUG python -m src.main
-```
-
-## Docker Deployment
-
-Build the secure production image:
-
-```bash
-docker build -t pii-remover -f docker/Dockerfile .
-```
-
-Run the container:
-
-```bash
-docker run -p 8000:8000 --env-file .env pii-remover
 ```

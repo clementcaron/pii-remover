@@ -1,0 +1,25 @@
+services:
+  pii-remover:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        # This will pick up BASE_IMAGE from your .env if defined, 
+        # or fallback to the CPU image by default.
+        - BASE_IMAGE=${DOCKER_BASE_IMAGE:-python:3.12-slim}
+    image: pii-remover:latest
+    container_name: pii-remover
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    # GPU Support (Uncomment these lines to enable GPU passthrough)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    # Restart policy
+    restart: unless-stopped
