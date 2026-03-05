@@ -65,6 +65,10 @@ docker compose logs -f
 docker compose down
 ```
 
+> [!NOTE]
+> By default, GPU support is commented out in `docker-compose.yml` to prevent errors on machines without the **NVIDIA Container Toolkit**. 
+> To enable GPU acceleration in Docker, ensure the toolkit is installed on your host, then uncomment the `deploy:` section in `docker-compose.yml`.
+
 ## Usage Example
 
 Once the proxy is running (default `http://localhost:8000`), you can route LLM requests through it.

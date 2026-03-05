@@ -64,9 +64,9 @@ prompt_val() {
     
     read -p "$(echo -e "${CYAN}${prompt_text} [${default_val}]: ${NC}")" input_val
     if [ -z "$input_val" ]; then
-        eval "${var_name}='${default_val}'"
+        printf -v "$var_name" '%s' "$default_val"
     else
-        eval "${var_name}='${input_val}'"
+        printf -v "$var_name" '%s' "$input_val"
     fi
 }
 

@@ -11,15 +11,32 @@ from src.core.logger import logger
 from src.proxy.client import ProxyClient
 
 
+from src.proxy.state import state_manager
+import asyncio
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting PII Remover Proxy...")
     # Initialize singleton client
     ProxyClient.get_client()
+    
+    # Start periodic cleanup task
+    async def periodic_cleanup():
+        while True:
+            await asyncio.sleep(60)
+            try:
+                state_manager.cleanup()
+            except Exception as e:
+                logger.error(f"Error during state cleanup: {e}")
+
+    cleanup_task = asyncio.create_task(periodic_cleanup())
+    
     yield
     # Shutdown
     logger.info("Shutting down PII Remover Proxy...")
+    cleanup_task.cancel()
     await ProxyClient.close_client()
 
 

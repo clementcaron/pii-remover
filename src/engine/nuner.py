@@ -91,11 +91,11 @@ class NuNERAnonymizer(AnonymizerBase):
         start_processing = time.perf_counter()
         results = list(texts)
         
+        # Global counters for the whole batch to ensure unique tokens per request
+        counters = collections.defaultdict(int)
+        
         for i, entities in zip(valid_indices, batch_entities):
             text = texts[i]
-            # Custom counter to create unique tokens like [PERSON_1] per string
-            # (or should it be per request? usually per string is easier for streaming)
-            counters = collections.defaultdict(int)
             
             # Sort entities by start position descending to avoid index shift
             entities = sorted(entities, key=lambda x: x['start'], reverse=True)

@@ -52,25 +52,32 @@ class StreamHandler:
         Scans for complete tokens and partial tokens at the end.
         Returns (reconstructed_content, remaining_buffer).
         """
-        # Tokens are like [PERSON_1]
-        # We find all occurrences of '['
+        # Tokens are like [PERSON_1]. 
+        # Token starts with '['. We find the last one.
         last_bracket_idx = buffer.rfind('[')
         
         if last_bracket_idx == -1:
             # No possible token start, we can safely output and clear buffer
             return self._replace_tokens(buffer), ""
         
-        # Check if there's a closing ']' after the last bracket
+        # Check if there's a closing ']' after the last bracket.
         if ']' in buffer[last_bracket_idx:]:
-            # The last token might be complete, or there's more text after it.
-            # We can output everything up to the end of the last complete token.
-            # But wait, there might be another partial token starting after the last ']'.
-            # It's safer to output everything up to the last character that isn't part of a potential token.
+            # If there's a closing bracket, we might have a complete token. 
+            # We treat everything until the last character as potentially processable if another '[' isn't there.
+            # However, for simplicity and to avoid complex state, if we see a closing bracket,
+            # we assume the current "potential token" at the end of the buffer is closed.
             return self._replace_tokens(buffer), ""
-        else:
-            # We have a potential partial token at the end.
-            # Output everything BEFORE the last '[' and keep the rest in buffer.
-            return self._replace_tokens(buffer[:last_bracket_idx]), buffer[last_bracket_idx:]
+        
+        # If we have a '[' without a ']', check how long the lookahead is.
+        # Most tokens are short (e.g. [EMAIL_ADDRESS_123] is < 30 chars).
+        # If the text after '[' is > 50 chars, it's very likely a literal '[' and not a token.
+        lookahead_len = len(buffer) - last_bracket_idx
+        if lookahead_len > 50:
+            # Treat as literal, output everything
+            return self._replace_tokens(buffer), ""
+        
+        # Otherwise, keep the potential token in buffer and output preceding text
+        return self._replace_tokens(buffer[:last_bracket_idx]), buffer[last_bracket_idx:]
 
     def _replace_tokens(self, text: str) -> str:
         """

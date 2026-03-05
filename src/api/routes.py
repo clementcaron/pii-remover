@@ -77,33 +77,49 @@ async def proxy_unified(request: Request, path: str):
     try:
         # Use a stream pattern to handle both streaming and non-streaming responses efficiently
         async def response_streamer():
-            async with client.stream(method, target_url, headers=proxy_headers, content=body) as resp:
-                if resp.status_code != 200:
-                    yield await resp.aread()
-                    return
+            try:
+                async with client.stream(method, target_url, headers=proxy_headers, content=body) as resp:
+                    if resp.status_code != 200:
+                        # For non-200, we still want to clean up state as we won't be de-anonymizing
+                        state_manager.delete_request(request_id)
+                        yield await resp.aread()
+                        return
 
-                if is_streaming:
-                    handler = StreamHandler(request_id)
-                    async for chunk in handler.handle_stream(resp.aiter_bytes()):
-                        yield chunk
-                else:
-                    content = await resp.aread()
-                    content_str = content.decode("utf-8")
-                    # De-anonymize the whole response
-                    content_str = anonymizer.deanonymize(content_str, request_id)
+                    if is_streaming:
+                        handler = StreamHandler(request_id)
+                        async for chunk in handler.handle_stream(resp.aiter_bytes()):
+                            yield chunk
+                    else:
+                        content = await resp.aread()
+                        content_str = content.decode("utf-8")
+                        # De-anonymize the whole response
+                        content_str = anonymizer.deanonymize(content_str, request_id)
+                        # delete_request is handled below in the finally block for non-streaming
+                        yield content_str.encode("utf-8")
+            except Exception as e:
+                logger.error(f"Stream error: {e}")
+                state_manager.delete_request(request_id)
+                raise
+            finally:
+                # Ensure cleanup for non-streaming success path
+                # Streaming path is handled by StreamHandler's finally block
+                if not is_streaming:
                     state_manager.delete_request(request_id)
-                    yield content_str.encode("utf-8")
 
         if is_streaming:
             return StreamingResponse(response_streamer(), media_type="text/event-stream")
         else:
             # Collect full response for non-streaming
             full_response = b""
-            async for chunk in response_streamer():
-                if isinstance(chunk, str):
-                    full_response += chunk.encode("utf-8")
-                else:
-                    full_response += chunk
+            try:
+                async for chunk in response_streamer():
+                    if isinstance(chunk, str):
+                        full_response += chunk.encode("utf-8")
+                    else:
+                        full_response += chunk
+            except Exception:
+                # Errors are logged in streamer
+                raise HTTPException(status_code=502, detail="Bad Gateway")
             
             # Try to return as JSON if possible
             try:
@@ -113,7 +129,12 @@ async def proxy_unified(request: Request, path: str):
 
     except httpx.RequestError as exc:
         logger.error(f"An error occurred while requesting {exc.request.url!r}: {exc}")
+        state_manager.delete_request(request_id)
         raise HTTPException(status_code=502, detail="Bad Gateway")
+    except Exception as exc:
+        logger.error(f"Unexpected error in proxy: {exc}")
+        state_manager.delete_request(request_id)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 def _anonymize_payload(payload: any, request_id: str) -> any:

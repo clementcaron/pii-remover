@@ -42,12 +42,15 @@ class StateManager:
         """
         Removes mappings that have exceeded the TTL.
         """
+        from src.core.logger import logger
         now = time.time()
         with self._lock:
             expired = [rid for rid, ts in self._timestamps.items() if now - ts > self._ttl]
-            for rid in expired:
-                self._storage.pop(rid, None)
-                self._timestamps.pop(rid, None)
+            if expired:
+                logger.info(f"Cleaning up {len(expired)} expired request states.")
+                for rid in expired:
+                    self._storage.pop(rid, None)
+                    self._timestamps.pop(rid, None)
 
 
 state_manager = StateManager()
