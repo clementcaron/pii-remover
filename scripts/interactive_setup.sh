@@ -108,7 +108,7 @@ prompt_val "PROXY_AUTH_TOKEN" "Secure Proxy Token" "${PROXY_AUTH_TOKEN:-$(openss
 # --- LLM Provider Keys ---
 echo -e "\n${BLUE}--- LLM Provider Keys (Optional) ---${NC}"
 prompt_val "OPENAI_API_KEY" "OpenAI API Key" "${OPENAI_API_KEY}"
-prompt_val "ANTHROPIC_API_KEY" "扫Anthropic API Key" "${ANTHROPIC_API_KEY}"
+prompt_val "ANTHROPIC_API_KEY" "Anthropic API Key" "${ANTHROPIC_API_KEY}"
 prompt_val "GEMINI_API_KEY" "Google Gemini API Key" "${GEMINI_API_KEY}"
 
 # Determine DOCKER_BASE_IMAGE for compose

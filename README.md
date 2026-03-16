@@ -1,21 +1,43 @@
 # PII Remover Proxy
 
-A lightweight, highly scalable, stateless reverse proxy (AI Gateway) designed to anonymize Personally Identifiable Information (PII) in requests to LLM providers and de-anonymize it in responses.
+A reverse proxy designed to anonymize Personally Identifiable Information in requests to LLM providers and de-anonymize it in responses.
+
+```text
+    USER REQUEST          ANONYMIZATION            LLM CALL
+   (Contains PII)        (Token Swapping)       (Clean Payload)
+   
+    ┌──────────┐         ┌───────────────┐      ┌──────────────┐
+    │  CLIENT  │ ──────▶ │   PII PROXY   │ ───▶ │ LLM PROVIDER │
+    └──────────┘         └───────┬───────┘      └──────┬───────┘
+          ▲                      │                     │
+          │                      │ 1. Scan/Map         │
+          │                      │ 2. Swap             │
+          │                      │                     │
+          │               ┌──────▼──────┐              │
+          │               │ EPHEMERAL   │              │
+          │               │ STATE (RAM) │              │
+          │               └──────┬──────┘              │
+          │                      │                     │
+          │                      │ 3. Restore          │
+    USER RESPONSE                │                  LLM RESPONSE
+    (PII Restored)      ◀────────┴───────────────── (With Tokens)
+```
 
 ## Features
 
-- Multi-Provider Support: Supports OpenAI, Anthropic, and Google Gemini API formats.
-- Robust Anonymization: Uses Microsoft Presidio and spaCy for Named Entity Recognition (NER) and Regex for structured data.
-- Ephemeral State: Request-scoped mapping storage with TTL-based cleanup to prevent memory leaks.
-- Streaming Support: Handles Server-Sent Events (SSE) with a lookahead buffer to correctly de-anonymize fragmented chunks.
-- Security-First: Non-root Docker execution, Bearer token authentication, and sanitized logging.
+- **Provider Support**: OpenAI, Anthropic, and Google Gemini.
+- **Engine**: Pure  ([**NuNER_Zero**](https://huggingface.co/numind/NuNER_Zero)) inference for zero-shot detection.
+- **Performance**: High-speed inference via transformer optimization.
+- **Ephemeral State**: Request-scoped mapping storage with automated background cleanup tasks.
+- **Streaming Support**: Advanced Server-Sent Events (SSE) handling with a lookahead buffer for fragmented de-anonymization.
+- **Production Ready**: Under 3GB Docker footprint, non-root execution, and Bearer token security.
 
 ## Core Architecture
 
-- api/: FastAPI routes and middleware for authentication and request tracking.
-- core/: Configuration management and sanitized logging.
-- engine/: Anonymization logic using NLP and Regex.
-- proxy/: HTTP client management and SSE stream handling.
+- `src/api/`: FastAPI routes and authentication middleware.
+- `src/core/`: Configuration and security-hardened logging.
+- `src/engine/`: Detection engine logic (`NuNERAnonymizer`) with entity merging for optimized recall.
+- `src/proxy/`: `StreamHandler` for SSE de-anonymization and request state management.
 
 ## Quick Start (Recommended)
 
@@ -65,9 +87,14 @@ docker compose logs -f
 docker compose down
 ```
 
-> [!NOTE]
 > By default, GPU support is commented out in `docker-compose.yml` to prevent errors on machines without the **NVIDIA Container Toolkit**. 
 > To enable GPU acceleration in Docker, ensure the toolkit is installed on your host, then uncomment the `deploy:` section in `docker-compose.yml`.
+
+## Performance & Accuracy
+
+The engine is optimized for high-throughput production environments:
+- **Accuracy**: achieving **~54% recall** on diverse PII datasets using pure zero-shot inference (as configured).
+- **Batching**: Payload de-identification is batched into a single model pass, yielding significant speedups for long conversation histories.
 
 ## Usage Example
 

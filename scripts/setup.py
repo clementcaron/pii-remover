@@ -35,12 +35,13 @@ def install_torch(gpu_available: bool):
     
     if gpu_available:
         # Install torch with CUDA support
-        cmd = install_cmd + ["torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu121"]
+        cmd_torch = install_cmd + ["torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu121"]
     else:
-        cmd = install_cmd + ["torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cpu"]
+        # Install CPU torch
+        cmd_torch = install_cmd + ["torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cpu"]
     
     try:
-        subprocess.check_call(cmd)
+        subprocess.check_call(cmd_torch)
         print("Torch installed successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Failed to install torch: {e}")
@@ -55,12 +56,14 @@ def download_model(model_name: str = "numind/NuNER_Zero"):
         print("Ensuring requirements from requirements.txt are installed...")
         subprocess.check_call(install_cmd + ["-r", "requirements.txt"])
         
-        print(f"Running model download using {python_exec}...")
-        download_script = f"from gliner import GLiNER; GLiNER.from_pretrained('{model_name}')"
-        subprocess.check_call([python_exec, "-c", download_script])
-        print(f"Model {model_name} downloaded and cached successfully.")
+        # Install huggingface-hub if not present
+        subprocess.check_call(install_cmd + ["huggingface-hub"])
+        
+        # We don't download here explicitly to avoid redundancy with the app startup download
+        # but we ensure the environment is ready.
+        print(f"Environment ready for {model_name}.")
     except Exception as e:
-        print(f"Failed to download model or install requirements: {e}")
+        print(f"Failed to install requirements: {e}")
         sys.exit(1)
 
 def main():

@@ -15,6 +15,9 @@ from src.proxy.state import state_manager
 import asyncio
 
 
+# Global variable to hold the cleanup task so it can be cancelled on shutdown
+cleanup_task = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -23,20 +26,22 @@ async def lifespan(app: FastAPI):
     ProxyClient.get_client()
     
     # Start periodic cleanup task
-    async def periodic_cleanup():
+    async def periodic_cleanup_task():
         while True:
-            await asyncio.sleep(60)
+            await asyncio.sleep(600)  # Clean up every 10 minutes
             try:
                 state_manager.cleanup()
             except Exception as e:
                 logger.error(f"Error during state cleanup: {e}")
 
-    cleanup_task = asyncio.create_task(periodic_cleanup())
+    global cleanup_task
+    cleanup_task = asyncio.create_task(periodic_cleanup_task())
     
     yield
     # Shutdown
     logger.info("Shutting down PII Remover Proxy...")
-    cleanup_task.cancel()
+    if cleanup_task:
+        cleanup_task.cancel()
     await ProxyClient.close_client()
 
 

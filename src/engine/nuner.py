@@ -52,16 +52,41 @@ class NuNERAnonymizer(AnonymizerBase):
         
         logger.info(f"Loading NuNER model from {model_path} via gliner ({device})...")
         try:
-            # First load the model without specifying device in kwargs to avoid TypeError
             self.model = GLiNER.from_pretrained(model_path)
-            # Move it to the appropriate device
             self.model.to(device)
-            logger.info(f"NuNER model loaded successfully and moved to {device}.")
+            logger.info("NuNER model loaded successfully.")
         except Exception as e:
             logger.error(f"Failed to load NuNER model: {e}")
             raise
 
         self.last_timing = {}
+
+    def _merge_entities(self, entities: list[dict], text: str) -> list[dict]:
+        """
+        Consolidates adjacent or overlapping entities of the same label into a single entity.
+        Higher threshold sometimes causes fragmentation; this merges them back.
+        """
+        if not entities:
+            return entities
+        
+        # Sort by start position
+        sorted_ents = sorted(entities, key=lambda x: x['start'])
+        merged = []
+        
+        curr = dict(sorted_ents[0])
+        for next_ent in sorted_ents[1:]:
+            # Check if same label and adjacent/overlapping
+            # We allow for a 1-character gap to handle potential tokenization issues
+            if next_ent['label'] == curr['label'] and next_ent['start'] <= curr['end'] + 1:
+                curr['end'] = max(curr['end'], next_ent['end'])
+                curr['text'] = text[curr['start']:curr['end']]
+                curr['score'] = (curr.get('score', 0) + next_ent.get('score', 0)) / 2
+            else:
+                merged.append(curr)
+                curr = dict(next_ent)
+        merged.append(curr)
+        return merged
+
 
     def anonymize_batch(self, texts: list[str], request_id: str) -> list[str]:
         if not texts:
@@ -77,14 +102,15 @@ class NuNERAnonymizer(AnonymizerBase):
         if not valid_texts:
             return texts
 
-        # Batch predict entities using the recommended inference method
+        # 1. NuNER Inference
         try:
             # GLiNER.inference is the replacement for batch_predict_entities
-            batch_entities = self.model.inference(valid_texts, self.labels, flat_ner=True)
+            # We use threshold 0.5 for a better balance between precision and recall
+            batch_entities = self.model.inference(valid_texts, self.labels, flat_ner=True, threshold=0.5)
         except Exception as e:
             logger.error(f"Inference failed: {e}")
             # Fallback to individual calls if batch fails
-            batch_entities = [self.model.predict_entities(t, self.labels) for t in valid_texts]
+            batch_entities = [self.model.predict_entities(t, self.labels, threshold=0.5) for t in valid_texts]
 
         inference_duration = time.perf_counter() - start_inference
         
@@ -94,8 +120,19 @@ class NuNERAnonymizer(AnonymizerBase):
         # Global counters for the whole batch to ensure unique tokens per request
         counters = collections.defaultdict(int)
         
-        for i, entities in zip(valid_indices, batch_entities):
+        for i, ner_entities in zip(valid_indices, batch_entities):
             text = texts[i]
+            
+            # Post-process: Merge fragmented entities
+            # NuNER labels are mapped to internal labels
+            mapped_ner = []
+            for ent in ner_entities:
+                label = ent['label']
+                internal_label = self.label_mapping.get(label, label.upper())
+                mapped_ner.append({**ent, 'label': internal_label})
+            
+            # Merge fragments
+            entities = self._merge_entities(mapped_ner, text)
             
             # Sort entities by start position descending to avoid index shift
             entities = sorted(entities, key=lambda x: x['start'], reverse=True)
@@ -107,11 +144,10 @@ class NuNERAnonymizer(AnonymizerBase):
                 end = ent['end']
                 original_pii = ent['text']
                 
-                internal_label = self.label_mapping.get(label, label.upper())
-                counters[internal_label] += 1
-                token = f"[{internal_label}_{counters[internal_label]}]"
+                counters[label] += 1
+                token = f"[{label}_{counters[label]}]"
                 
-                logger.debug(f"[{request_id}] Detected PII: '{original_pii}' -> {token}")
+                logger.debug(f"[{request_id}] Detected PII ({label}): '{original_pii}' -> {token}")
                 state_manager.set_mapping(request_id, token, original_pii)
                 anonymized_text = anonymized_text[:start] + token + anonymized_text[end:]
             

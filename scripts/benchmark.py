@@ -6,7 +6,6 @@ import uuid
 import psutil
 import statistics
 
-from src.engine.regex_nlp import RegexNLPAnonymizer
 from src.engine.nuner import NuNERAnonymizer
 
 GOLD_STANDARD_DATASET = [
@@ -54,7 +53,8 @@ def calculate_recall(engine, dataset):
             if entity not in anonymized:
                 correct_detections += 1
             else:
-                print(f"DEBUG: Failed to detect '{entity}' in '{item['text']}'")
+                print(f"FAILED RECALL: Engine '{engine.__class__.__name__}' missed '{entity}' in text: '{item['text'][:50]}...'")
+                print(f"               Anonymized text: '{anonymized[:100]}...'")
                 
     return (correct_detections / total_entities) * 100 if total_entities > 0 else 0
 
@@ -113,13 +113,7 @@ if __name__ == "__main__":
 
     results = []
     
-    # Benchmark Regex/Spacy (Old)
-    try:
-        from src.engine.regex_nlp import RegexNLPAnonymizer
-        old_engine = RegexNLPAnonymizer()
-        results.append(run_benchmark(old_engine, "RegexNLP (Spacy)"))
-    except Exception as e:
-        print(f"Error benchmarking RegexNLP: {e}")
+    # Regex/Spacy engine was removed in V2
 
     # Benchmark NuNER (New)
     try:
