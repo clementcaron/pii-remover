@@ -4,23 +4,26 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       args:
-        # This will pick up BASE_IMAGE from your .env if defined, 
-        # or fallback to the CPU image by default.
-        - BASE_IMAGE=${DOCKER_BASE_IMAGE:-python:3.12-slim}
-        - USE_GPU=${USE_GPU:-false}
+        - USE_GPU=false
     image: pii-remover:latest
     container_name: pii-remover
     env_file:
       - .env
     ports:
       - "${PORT:-8000}:${PORT:-8000}"
-    # GPU Support (Uncomment these lines to enable GPU passthrough)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-    # Restart policy
+    # The hf_cache volume persists model weights (~500MB) across container restarts.
+    # This prevents redownloading the model every time the container is recreated.
+    volumes:
+      - hf_cache:/home/appuser/.cache
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4g
     restart: unless-stopped
+
+# Named volumes are persisted even if the container is deleted.
+# Use 'docker compose down -v' to wipe the cache if needed.
+volumes:
+  hf_cache:
+    driver: local

@@ -11,46 +11,26 @@ class NuNERAnonymizer(AnonymizerBase):
     PII detection and anonymization using NuNER/GLiNER zero-shot model via standard gliner library (CPU).
     """
     def __init__(self, model_path: str = "numind/NuNER_Zero"):
-        # Labels we want NuNER to look for.
-        self.labels = [
-            "person", 
-            "email", 
-            "phone number", 
-            "credit card", 
-            "cryptocurrency address", 
-            "ip address", 
-            "location", 
-            "iban", 
-            "social security number", 
-            "date",
-            "organization",
-            "company"
-        ]
-        
         # Mapping from NuNER labels to our standard internal tokens
         self.label_mapping = {
             "person": "PERSON",
             "email": "EMAIL_ADDRESS",
             "phone number": "PHONE_NUMBER",
-            "credit card": "CREDIT_CARD",
-            "cryptocurrency address": "CRYPTO",
-            "ip address": "IP_ADDRESS",
-            "location": "LOCATION",
-            "iban": "IBAN_CODE",
-            "social security number": "US_SSN",
-            "date": "DATE_TIME",
             "organization": "ORG",
-            "company": "ORG"
+            "location": "LOCATION",
+            "date": "DATE_TIME"
         }
+        self.labels = list(self.label_mapping.keys())
 
         from src.core.config import settings
         import torch
 
+        # Determine best available device based on settings and hardware
         device = "cpu"
         if settings.USE_GPU:
             if torch.cuda.is_available():
                 device = "cuda"
-                logger.info("CUDA is available. Enabling GPU acceleration for NuNER.")
+                logger.info("GPU acceleration enabled for NuNER (cuda).")
             else:
                 logger.warning("USE_GPU=true but CUDA is not available. Falling back to CPU.")
         

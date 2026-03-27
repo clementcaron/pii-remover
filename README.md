@@ -92,23 +92,27 @@ The proxy will be available at `http://localhost:8000` (or the port defined in y
 
 > **Tip**: You can also use `uvicorn src.main:app --reload` during development for hot-reloading.
 
-## Docker Deployment
+## Docker Deployment (Simplified)
 
-We recommend using **Docker Compose** for the easiest deployment. It automatically reads your `.env` (configured via `interactive_setup.sh`) to decide whether to build a CPU or GPU-accelerated version.
+The Docker setup is now for **reliability and ease of use**. By default, it uses a CPU runtime to ensure it runs immediately on any hardware without driver conflicts.
 
 ```bash
-# Build and start the container
+# 1. Build and start (CPU for now)
 docker compose up -d --build
 
-# View logs
+# 2. View logs (First run will download the 500MB model)
 docker compose logs -f
 
-# Stop the proxy
+# 3. Stop
 docker compose down
 ```
 
-> By default, GPU support is commented out in `docker-compose.yml` to prevent errors on machines without the **NVIDIA Container Toolkit**. 
-> To enable GPU acceleration in Docker, ensure the toolkit is installed on your host, then uncomment the `deploy:` section in `docker-compose.yml`.
+### Persistent Model Cache
+To keep the image small and builds fast, the model weights are stored in a **Docker Volume** called `hf_cache`. 
+- The model downloads **only once** on the first run.
+- Subsequent builds and container restarts are **instant**.
+- To completely wipe the model and re-download: `docker compose down -v`.
+
 
 ## Performance & Accuracy
 
