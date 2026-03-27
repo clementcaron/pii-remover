@@ -34,8 +34,8 @@ def install_torch(gpu_available: bool):
     print(f"Installing torch (GPU Support: {gpu_available}) using {' '.join(install_cmd)}...")
     
     if gpu_available:
-        # Install torch with CUDA support
-        cmd_torch = install_cmd + ["torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu121"]
+        # Install torch with CUDA support (Updated for CUDA 13.0 in 2026)
+        cmd_torch = install_cmd + ["torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cu130"]
     else:
         # Install CPU torch
         cmd_torch = install_cmd + ["torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cpu"]

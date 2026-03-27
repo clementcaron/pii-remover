@@ -113,9 +113,9 @@ prompt_val "GEMINI_API_KEY" "Google Gemini API Key" "${GEMINI_API_KEY}"
 
 # Determine DOCKER_BASE_IMAGE for compose
 if [ "$USE_GPU" == "true" ]; then
-    DOCKER_BASE_IMAGE="nvidia/cuda:12.1.1-runtime-ubuntu22.04"
+    DOCKER_BASE_IMAGE="nvidia/cuda:13.0.1-runtime-ubuntu24.04"
 else
-    DOCKER_BASE_IMAGE="python:3.12-slim"
+    DOCKER_BASE_IMAGE="python:3.13-slim"
 fi
 
 # --- Save to .env ---

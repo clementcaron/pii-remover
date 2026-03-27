@@ -22,7 +22,9 @@ class NuNERAnonymizer(AnonymizerBase):
             "location", 
             "iban", 
             "social security number", 
-            "date"
+            "date",
+            "organization",
+            "company"
         ]
         
         # Mapping from NuNER labels to our standard internal tokens
@@ -36,7 +38,9 @@ class NuNERAnonymizer(AnonymizerBase):
             "location": "LOCATION",
             "iban": "IBAN_CODE",
             "social security number": "US_SSN",
-            "date": "DATE_TIME"
+            "date": "DATE_TIME",
+            "organization": "ORG",
+            "company": "ORG"
         }
 
         from src.core.config import settings

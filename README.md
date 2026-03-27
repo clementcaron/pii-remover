@@ -51,8 +51,8 @@ For the easiest setup, use the interactive configuration script. It will auto-de
 
 ### Prerequisites
 
-- Python 3.12+
-- Docker (optional, for containerized deployment)
+- Python 3.13+ (Optimized for 2026 releases)
+- uv (Highly recommended for dependency resolution)
 - Pytorch compatible GPU (optional, for 20x faster inference)
 
 ### Manual Setup
@@ -71,6 +71,26 @@ If you prefer not to use the interactive script:
    uv venv .venv
    .venv/bin/python3 scripts/setup.py
    ```
+
+
+## Running Locally
+
+To start the proxy directly on your machine (after running the automated setup):
+
+1. **Activate Environment**:
+   ```bash
+   source .venv/bin/activate
+   ```
+
+2. **Start the Proxy**:
+   Run the application directly using the Python module:
+   ```bash
+   python3 -m src.main
+   ```
+   
+The proxy will be available at `http://localhost:8000` (or the port defined in your `.env`).
+
+> **Tip**: You can also use `uvicorn src.main:app --reload` during development for hot-reloading.
 
 ## Docker Deployment
 

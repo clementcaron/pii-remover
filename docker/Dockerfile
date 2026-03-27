@@ -1,27 +1,27 @@
 # ARG for base image selection
-# CPU base: python:3.12-slim
-# GPU base: nvidia/cuda:12.1.1-runtime-ubuntu22.04
-ARG BASE_IMAGE=python:3.12-slim
+# CPU base: python:3.13-slim
+# GPU base: nvidia/cuda:13.0.1-runtime-ubuntu24.04
+ARG BASE_IMAGE=python:3.13-slim
 # New ARG for GPU toggle
 ARG USE_GPU=false
 
 # Stage 0: Common Python Setup
 FROM ${BASE_IMAGE} AS python-base
 USER root
-RUN if command -v python3 &> /dev/null && python3 --version | grep -q "3.12"; then \
-        echo "Python 3.12 already present"; \
+RUN if command -v python3 &> /dev/null && python3 --version | grep -q "3.13"; then \
+        echo "Python 3.13 already present"; \
     else \
         export DEBIAN_FRONTEND=noninteractive && \
         apt-get update && apt-get install -y --no-install-recommends \
         software-properties-common gpg-agent wget ca-certificates \
         && add-apt-repository ppa:deadsnakes/ppa -y \
         && apt-get update && apt-get install -y --no-install-recommends \
-        python3.12 python3.12-dev python3.12-venv \
+        python3.13 python3.13-dev python3.13-venv \
         && rm -rf /var/lib/apt/lists/* \
-        && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
-        && ln -sf /usr/bin/python3.12 /usr/bin/python \
+        && ln -sf /usr/bin/python3.13 /usr/bin/python3 \
+        && ln -sf /usr/bin/python3.13 /usr/bin/python \
         && wget https://bootstrap.pypa.io/get-pip.py \
-        && python3.12 get-pip.py \
+        && python3.13 get-pip.py \
         && rm get-pip.py; \
     fi
 
@@ -54,7 +54,7 @@ RUN if [ "$USE_GPU" = "true" ]; then \
         uv pip install --no-cache \
         --index-strategy unsafe-best-match \
         --index-url https://pypi.org/simple \
-        --extra-index-url https://download.pytorch.org/whl/cu121 \
+        --extra-index-url https://download.pytorch.org/whl/cu130 \
         -r requirements.txt torch torchvision torchaudio huggingface-hub; \
     else \
         uv pip install --no-cache \
@@ -91,7 +91,7 @@ USER appuser
 
 # Environment variables
 ENV PATH="/opt/venv/bin:$PATH"
-ENV PYTHONPATH="/opt/venv/lib/python3.12/site-packages:$PYTHONPATH"
+ENV PYTHONPATH="/opt/venv/lib/python3.13/site-packages:$PYTHONPATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
