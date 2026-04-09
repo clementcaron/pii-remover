@@ -49,3 +49,6 @@ data/
 # Agents
 .agents/
 GEMINI.md
+
+# Benchmark
+scripts/benchmark.py

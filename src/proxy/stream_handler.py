@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import codecs
 from typing import AsyncGenerator
 
 from src.proxy.state import state_manager
@@ -18,6 +19,7 @@ class StreamHandler:
         self.mapping = state_manager.get_mapping(request_id)
         # We look for patterns like [ENTITY_N]
         self.token_pattern = r"\[[A-Z_]+_\d+\]"
+        self.decoder = codecs.getincrementaldecoder("utf-8")()
 
     async def handle_stream(self, response_stream: AsyncGenerator[bytes, None]) -> AsyncGenerator[str, None]:
         """
@@ -25,7 +27,7 @@ class StreamHandler:
         """
         try:
             async for chunk in response_stream:
-                chunk_str = chunk.decode("utf-8")
+                chunk_str = self.decoder.decode(chunk)
                 self.buffer += chunk_str
 
                 # De-anonymize the buffer
@@ -42,6 +44,11 @@ class StreamHandler:
             # Final flush of the buffer
             if self.buffer:
                 yield self._replace_tokens(self.buffer)
+            
+            # Flush any remaining bytes from the decoder (though there shouldn't be any if UTF-8 is valid)
+            remaining = self.decoder.decode(b"", final=True)
+            if remaining:
+                yield self._replace_tokens(remaining)
 
         finally:
             # Clean up state when stream ends or is interrupted

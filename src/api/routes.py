@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from fastapi import APIRouter, Request, HTTPException, Response
 from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.concurrency import run_in_threadpool
 import httpx
 
 from src.core.config import settings
@@ -50,6 +51,11 @@ async def proxy_unified(request: Request, path: str):
         if settings.OPENAI_API_KEY:
             proxy_headers["Authorization"] = f"Bearer {settings.OPENAI_API_KEY}"
 
+    # Append query parameters if present
+    query_params = str(request.url.query)
+    if query_params:
+        target_url = f"{target_url}?{query_params}"
+
     body = await request.body()
     payload = None
     if body:
@@ -58,7 +64,8 @@ async def proxy_unified(request: Request, path: str):
             # Anonymize payload
             # This is complex as it depends on provider schema.
             # We'll deep-scan for 'content' or 'text' fields.
-            payload = _anonymize_payload(payload, request_id)
+            # Bug 1: Offload heavy sync inference to threadpool to avoid blocking event loop
+            payload = await run_in_threadpool(_anonymize_payload, payload, request_id)
             logger.debug(f"[{request_id}] SENT TO PROVIDER: {payload}")
             body = json.dumps(payload).encode("utf-8")
         except json.JSONDecodeError:
@@ -75,57 +82,51 @@ async def proxy_unified(request: Request, path: str):
         is_streaming = True
 
     try:
-        # Use a stream pattern to handle both streaming and non-streaming responses efficiently
-        async def response_streamer():
-            try:
-                async with client.stream(method, target_url, headers=proxy_headers, content=body) as resp:
-                    if resp.status_code != 200:
-                        # For non-200, we still want to clean up state as we won't be de-anonymizing
-                        state_manager.delete_request(request_id)
-                        yield await resp.aread()
-                        return
-
-                    if is_streaming:
-                        handler = StreamHandler(request_id)
-                        async for chunk in handler.handle_stream(resp.aiter_bytes()):
-                            yield chunk
-                    else:
-                        content = await resp.aread()
-                        content_str = content.decode("utf-8")
-                        # De-anonymize the whole response
-                        content_str = anonymizer.deanonymize(content_str, request_id)
-                        # delete_request is handled below in the finally block for non-streaming
-                        yield content_str.encode("utf-8")
-            except Exception as e:
-                logger.error(f"Stream error: {e}")
-                state_manager.delete_request(request_id)
-                raise
-            finally:
-                # Ensure cleanup for non-streaming success path
-                # Streaming path is handled by StreamHandler's finally block
-                if not is_streaming:
-                    state_manager.delete_request(request_id)
+        # Bug 3: Perform request first to capture upstream status code before initializing response
+        req = client.build_request(method, target_url, headers=proxy_headers, content=body)
+        resp = await client.send(req, stream=True)
 
         if is_streaming:
-            return StreamingResponse(response_streamer(), media_type="text/event-stream")
+            async def response_streamer():
+                try:
+                    if resp.status_code != 200:
+                        state_manager.delete_request(request_id)
+                        # Stream the error body as is
+                        async for chunk in resp.aiter_bytes():
+                            yield chunk
+                        return
+
+                    handler = StreamHandler(request_id)
+                    async for chunk in handler.handle_stream(resp.aiter_bytes()):
+                        yield chunk
+                except Exception as e:
+                    logger.error(f"Stream error: {e}")
+                    state_manager.delete_request(request_id)
+                    raise
+                finally:
+                    await resp.aclose()
+
+            return StreamingResponse(response_streamer(), status_code=resp.status_code, media_type="text/event-stream")
         else:
-            # Collect full response for non-streaming
-            full_response = b""
             try:
-                async for chunk in response_streamer():
-                    if isinstance(chunk, str):
-                        full_response += chunk.encode("utf-8")
-                    else:
-                        full_response += chunk
-            except Exception:
-                # Errors are logged in streamer
-                raise HTTPException(status_code=502, detail="Bad Gateway")
-            
-            # Try to return as JSON if possible
-            try:
-                return JSONResponse(content=json.loads(full_response))
-            except:
-                return Response(content=full_response)
+                # Capture full response for de-anonymization
+                full_content = await resp.aread()
+                if resp.status_code == 200:
+                    content_str = full_content.decode("utf-8")
+                    # Bug 1: Also offload de-anonymization if it's heavy
+                    content_str = await run_in_threadpool(anonymizer.deanonymize, content_str, request_id)
+                    full_content = content_str.encode("utf-8")
+                
+                # Cleanup state
+                state_manager.delete_request(request_id)
+                
+                # Return with correct status code
+                try:
+                    return JSONResponse(content=json.loads(full_content), status_code=resp.status_code)
+                except:
+                    return Response(content=full_content, status_code=resp.status_code)
+            finally:
+                await resp.aclose()
 
     except httpx.RequestError as exc:
         logger.error(f"An error occurred while requesting {exc.request.url!r}: {exc}")
@@ -153,7 +154,9 @@ def _anonymize_payload(payload: any, request_id: str) -> any:
                     _collect(v, target_list)
         elif isinstance(data, list):
             for i, item in enumerate(data):
-                if isinstance(item, str) and "role" in data[i-1 if i > 0 else 0]: # Simplified check for content-only lists
+                # Check if item is a string and its predecessor is a dictionary containing 'role'
+                predecessor = data[i-1] if i > 0 else {}
+                if isinstance(item, str) and isinstance(predecessor, dict) and "role" in predecessor:
                     target_list.append((data, i, item))
                 else:
                     _collect(item, target_list)

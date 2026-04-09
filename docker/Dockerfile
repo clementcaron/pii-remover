@@ -11,7 +11,7 @@ ARG BASE_IMAGE=python:3.13-slim
 ARG USE_GPU=false
 
 # Stage 1: Builder
-FROM python:3.13-slim AS builder
+FROM ${BASE_IMAGE} AS builder
 ARG USE_GPU=false
 
 # Install uv for fast dependency management
@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     fi
 
 # Stage 2: Final Runtime
-FROM python:3.13-slim AS final
+FROM ${BASE_IMAGE} AS final
 
 # Create a non-root user
 RUN groupadd -r appuser && useradd -r -g appuser -m appuser
