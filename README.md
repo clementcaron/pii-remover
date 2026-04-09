@@ -92,18 +92,21 @@ The proxy will be available at `http://localhost:8000` (or the port defined in y
 
 > **Tip**: You can also use `uvicorn src.main:app --reload` during development for hot-reloading.
 
-## Docker Deployment (Simplified)
+## Docker Deployment
 
-The Docker setup is now for **reliability and ease of use**. By default, it uses a CPU runtime to ensure it runs immediately on any hardware without driver conflicts.
+The Docker setup is highly optimized and dynamically supports GPU acceleration via the `USE_GPU` variable in your `.env`.
 
 ```bash
-# 1. Build and start (CPU for now)
+# 1. Build and start (Downloads cu130 PyTorch layers if USE_GPU=true)
 docker compose up -d --build
 
 # 2. View logs (First run will download the 500MB model)
 docker compose logs -f
 
-# 3. Stop
+# 3. Verify GPU Integration (if USE_GPU=true)
+curl http://localhost:8000/health/gpu
+
+# 4. Stop
 docker compose down
 ```
 

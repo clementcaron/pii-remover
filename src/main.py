@@ -63,6 +63,21 @@ app.include_router(router)
 async def health_check():
     return {"status": "healthy"}
 
+@app.get("/health/gpu")
+async def health_check_gpu():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return {
+                "status": "healthy",
+                "gpu": True,
+                "device": torch.cuda.get_device_name(0)
+            }
+        else:
+            return {"status": "degraded", "gpu": False, "reason": "CUDA not available"}
+    except ImportError:
+        return {"status": "degraded", "gpu": False, "reason": "PyTorch not installed"}
+
 
 if __name__ == "__main__":
     uvicorn.run(

@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       args:
-        - USE_GPU=false
+        - USE_GPU=${USE_GPU:-false}
     image: pii-remover:latest
     container_name: pii-remover
     env_file:
@@ -20,6 +20,11 @@ services:
         limits:
           cpus: '2.0'
           memory: 4g
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     restart: unless-stopped
 
 # Named volumes are persisted even if the container is deleted.

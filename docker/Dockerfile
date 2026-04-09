@@ -12,6 +12,7 @@ ARG USE_GPU=false
 
 # Stage 1: Builder
 FROM python:3.13-slim AS builder
+ARG USE_GPU=false
 
 # Install uv for fast dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/uv
@@ -23,15 +24,22 @@ ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
 # Install dependencies into a virtual environment
-# We use --index-url for CPU-optimized torch and --extra-index-url for standard PyPI packages.
+# We use --index-url for optionally downloading CUDA-enabled PyTorch.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
     /uv/bin/uv venv /opt/venv && \
     . /opt/venv/bin/activate && \
-    /uv/bin/uv pip install --no-cache-dir \
-    --index-url https://download.pytorch.org/whl/cpu \
-    --extra-index-url https://pypi.org/simple \
-    -r requirements.txt gliner uvicorn fastapi pydantic-settings python-dotenv
+    if [ "$USE_GPU" = "true" ]; then \
+        /uv/bin/uv pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cu130 \
+        --extra-index-url https://pypi.org/simple \
+        -r requirements.txt gliner uvicorn fastapi pydantic-settings python-dotenv; \
+    else \
+        /uv/bin/uv pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        --extra-index-url https://pypi.org/simple \
+        -r requirements.txt gliner uvicorn fastapi pydantic-settings python-dotenv; \
+    fi
 
 # Stage 2: Final Runtime
 FROM python:3.13-slim AS final
