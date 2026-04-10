@@ -160,9 +160,26 @@ class NuNERAnonymizer(AnonymizerBase):
         if not mapping:
             return text
 
+        import json
+        import re
+        
         # Simple replacement for non-streaming de-anonymization
         # Sort by length descending to avoid partial replacements if tokens overlap
         for token, original in sorted(mapping.items(), key=lambda x: len(x[0]), reverse=True):
-            text = text.replace(token, original)
+            # Safe JSON escape for injection into raw JSON blocks
+            safe_original = json.dumps(original)[1:-1]
+            
+            # The LLM (especially Gemini) often escapes markdown characters. 
+            # e.g., `[PHONE_NUMBER_1]` might become `\[PHONE\_NUMBER\_1\]`
+            # Inside a JSON stream, this looks like `\\[PHONE\\_NUMBER\\_1\\]`.
+            # We build a regex pattern to optionally allow these JSON-escaped backslashes.
+            escaped_token = ""
+            for char in token:
+                if char in ["_", "[", "]"]:
+                    escaped_token += r"(?:\\\\)?" + re.escape(char)
+                else:
+                    escaped_token += re.escape(char)
+                    
+            text = re.sub(escaped_token, lambda m: safe_original, text)
         
         return text

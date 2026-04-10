@@ -43,7 +43,9 @@ async def proxy_unified(request: Request, path: str):
         proxy_headers["anthropic-version"] = "2023-06-01"  # Required for Anthropic
     elif "models" in path and ("generateContent" in path or "run_content" in path or "streamGenerateContent" in path): # Gemini
         # Handles /v1/models/... and /v1beta/models/...
-        target_url = f"https://generativelanguage.googleapis.com/{path}"
+        # Fix for clients like Chatbox putting http://localhost:8000/v1 as base URL for Gemini models
+        clean_path = path.replace("v1/v1beta/", "v1beta/").replace("v1/v1/", "v1/")
+        target_url = f"https://generativelanguage.googleapis.com/{clean_path}"
         proxy_headers["x-goog-api-key"] = settings.GEMINI_API_KEY
     else:
         # Fallback to OpenAI style for other paths if key exists
@@ -142,6 +144,12 @@ def _anonymize_payload(payload: any, request_id: str) -> any:
     """
     Optimized version that collects all text fields and anonymizes them in a single batch.
     """
+    # Strip thinking config to avoid long 30-sec stalls and hidden tokens 
+    # that third-party clients (like Chatbox) fail to render.
+    if isinstance(payload, dict) and "generationConfig" in payload:
+        if isinstance(payload["generationConfig"], dict):
+            payload["generationConfig"].pop("thinkingConfig", None)
+
     # 1. Collect all paths and values that need anonymization
     text_items = [] # list of (parent_container, key_or_index, value)
 

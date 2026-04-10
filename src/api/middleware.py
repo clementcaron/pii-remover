@@ -22,13 +22,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
+        gemini_auth = request.headers.get("x-goog-api-key")
+        anthropic_auth = request.headers.get("x-api-key")
+
+        token = None
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+        elif gemini_auth:
+            token = gemini_auth
+        elif anthropic_auth:
+            token = anthropic_auth
+
+        if not token:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Missing or invalid authentication token."}
             )
         
-        token = auth_header.split(" ")[1]
         if token != settings.PROXY_AUTH_TOKEN:
             logger.warning(f"Unauthorized access attempt from {request.client.host if request.client else 'unknown'}")
             return JSONResponse(

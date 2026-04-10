@@ -89,11 +89,29 @@ class StreamHandler:
     def _replace_tokens(self, text: str) -> str:
         """
         Performs replacement of all complete tokens found in text.
+        Safely escapes the original string so it doesn't break JSON formatting if it contains quotes/newlines.
         """
         if not self.mapping:
             return text
             
+        import json
+        import re
         result = text
         for token, original in sorted(self.mapping.items(), key=lambda x: len(x[0]), reverse=True):
-            result = result.replace(token, original)
+            # The streaming response is raw JSON text inside SSE events.
+            # We must escape the original string so that newlines/quotes don't break the JSON structure.
+            safe_original = json.dumps(original)[1:-1]
+            
+            # The LLM (especially Gemini) often escapes markdown characters. 
+            # e.g., `[PHONE_NUMBER_1]` might become `\[PHONE\_NUMBER\_1\]`
+            # Inside a JSON stream, this looks like `\\[PHONE\\_NUMBER\\_1\\]`.
+            # We build a regex pattern to optionally allow these JSON-escaped backslashes.
+            escaped_token = ""
+            for char in token:
+                if char in ["_", "[", "]"]:
+                    escaped_token += r"(?:\\\\)?" + re.escape(char)
+                else:
+                    escaped_token += re.escape(char)
+                    
+            result = re.sub(escaped_token, lambda m: safe_original, result)
         return result

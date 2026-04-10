@@ -90,8 +90,6 @@ To start the proxy directly on your machine (after running the automated setup):
    
 The proxy will be available at `http://localhost:8000` (or the port defined in your `.env`).
 
-> **Tip**: You can also use `uvicorn src.main:app --reload` during development for hot-reloading.
-
 ## Docker Deployment
 
 The Docker setup is highly optimized and dynamically supports GPU acceleration via the `USE_GPU` variable in your `.env`.
