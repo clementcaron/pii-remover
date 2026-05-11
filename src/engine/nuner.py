@@ -176,7 +176,9 @@ class NuNERAnonymizer(AnonymizerBase):
             escaped_token = ""
             for char in token:
                 if char in ["_", "[", "]"]:
-                    escaped_token += r"(?:\\\\)?" + re.escape(char)
+                    # Allow optional backslashes (up to 2) before special characters
+                    # This handles both Markdown escaping \[...\] and JSON escaping \\[...\\].
+                    escaped_token += r"\\{0,2}" + re.escape(char)
                 else:
                     escaped_token += re.escape(char)
                     

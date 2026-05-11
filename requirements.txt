@@ -8,5 +8,3 @@ python-multipart==0.0.9
 setuptools==69.1.1
 phonenumbers==8.13.32
 gliner==0.2.26
-psutil==7.2.2
-tabulate==0.10.0

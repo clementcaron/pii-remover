@@ -49,6 +49,7 @@ data/
 # Agents
 .agents/
 GEMINI.md
+code-logic.md
 
 # Benchmark
 scripts/benchmark.py

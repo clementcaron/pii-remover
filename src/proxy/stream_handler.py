@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import codecs
+import re
 from typing import AsyncGenerator
 
 from src.proxy.state import state_manager
@@ -17,6 +18,7 @@ class StreamHandler:
         self.request_id = request_id
         self.buffer = ""
         self.mapping = state_manager.get_mapping(request_id)
+        logger.debug(f"[{request_id}] StreamHandler initialized with mapping: {self.mapping}")
         # We look for patterns like [ENTITY_N]
         self.token_pattern = r"\[[A-Z_]+_\d+\]"
         self.decoder = codecs.getincrementaldecoder("utf-8")()
@@ -52,6 +54,7 @@ class StreamHandler:
 
         finally:
             # Clean up state when stream ends or is interrupted
+            logger.debug(f"[{self.request_id}] StreamHandler cleaning up state")
             state_manager.delete_request(self.request_id)
 
     def _process_buffer(self, buffer: str) -> tuple[str, str]:
@@ -59,32 +62,44 @@ class StreamHandler:
         Scans for complete tokens and partial tokens at the end.
         Returns (reconstructed_content, remaining_buffer).
         """
-        # Tokens are like [PERSON_1]. 
-        # Token starts with '['. We find the last one.
+        # Find the last potential token start '['
         last_bracket_idx = buffer.rfind('[')
         
         if last_bracket_idx == -1:
-            # No possible token start, we can safely output and clear buffer
             return self._replace_tokens(buffer), ""
+            
+        # Check the content from the last '[' to the end
+        substring = buffer[last_bracket_idx:]
         
-        # Check if there's a closing ']' after the last bracket.
-        if ']' in buffer[last_bracket_idx:]:
-            # If there's a closing bracket, we might have a complete token. 
-            # We treat everything until the last character as potentially processable if another '[' isn't there.
-            # However, for simplicity and to avoid complex state, if we see a closing bracket,
-            # we assume the current "potential token" at the end of the buffer is closed.
+        # If there is a closing bracket, we check if it's a complete token or just JSON
+        if ']' in substring:
+            # If the text between '[' and the FIRST ']' looks like a token, then it's complete.
+            # Our tokens are [A-Z_0-9]+]. 
+            first_closing_idx = substring.find(']')
+            potential_token_content = substring[1:first_closing_idx]
+            
+            # If it matches the internal part of our token pattern, it's a complete token.
+            if re.fullmatch(r"[A-Z0-9\_]+", potential_token_content):
+                # Complete token found, we can process everything
+                return self._replace_tokens(buffer), ""
+            else:
+                # It's a literal '[' (e.g. JSON array start) followed by something else.
+                # We can safely output it.
+                return self._replace_tokens(buffer), ""
+        
+        # If we have an unclosed '[', we must decide if it's a partial token.
+        # Partial tokens only contain valid token characters.
+        potential_partial = substring[1:]
+        if not potential_partial or re.fullmatch(r"[A-Z0-9\_]+", potential_partial):
+            # It's a potential partial token. We wait for more data.
+            if len(substring) > 50:
+                return self._replace_tokens(buffer), ""
+            
+            # Output everything BEFORE the last '['
+            return self._replace_tokens(buffer[:last_bracket_idx]), buffer[last_bracket_idx:]
+        else:
+            # Literal '[', output it.
             return self._replace_tokens(buffer), ""
-        
-        # If we have a '[' without a ']', check how long the lookahead is.
-        # Most tokens are short (e.g. [EMAIL_ADDRESS_123] is < 30 chars).
-        # If the text after '[' is > 50 chars, it's very likely a literal '[' and not a token.
-        lookahead_len = len(buffer) - last_bracket_idx
-        if lookahead_len > 50:
-            # Treat as literal, output everything
-            return self._replace_tokens(buffer), ""
-        
-        # Otherwise, keep the potential token in buffer and output preceding text
-        return self._replace_tokens(buffer[:last_bracket_idx]), buffer[last_bracket_idx:]
 
     def _replace_tokens(self, text: str) -> str:
         """
@@ -109,7 +124,9 @@ class StreamHandler:
             escaped_token = ""
             for char in token:
                 if char in ["_", "[", "]"]:
-                    escaped_token += r"(?:\\\\)?" + re.escape(char)
+                    # Allow optional backslashes (up to 2) before special characters
+                    # This handles both Markdown escaping \[...\] and JSON escaping \\[...\\].
+                    escaped_token += r"\\{0,2}" + re.escape(char)
                 else:
                     escaped_token += re.escape(char)
                     

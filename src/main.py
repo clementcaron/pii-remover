@@ -56,9 +56,8 @@ app = FastAPI(
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(AuthMiddleware)
 
-# Include Routes
-app.include_router(router)
-
+# Health endpoints must be registered BEFORE the catch-all proxy router
+# so they are matched first during route resolution.
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
@@ -78,6 +77,8 @@ async def health_check_gpu():
     except ImportError:
         return {"status": "degraded", "gpu": False, "reason": "PyTorch not installed"}
 
+# Proxy catch-all must come AFTER fixed routes to avoid shadowing them
+app.include_router(router)
 
 if __name__ == "__main__":
     uvicorn.run(
