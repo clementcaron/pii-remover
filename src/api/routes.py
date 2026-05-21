@@ -12,6 +12,7 @@ from src.engine.nuner import NuNERAnonymizer
 from src.proxy.client import ProxyClient
 from src.proxy.stream_handler import StreamHandler
 from src.proxy.state import state_manager
+from src.api.provider_router import resolve as resolve_provider
 
 router = APIRouter()
 anonymizer = NuNERAnonymizer()
@@ -29,29 +30,9 @@ async def proxy_unified(request: Request, path: str):
         if k.lower() not in ["host", "authorization", "x-request-id", "content-length", "connection", "accept-encoding"]:
             proxy_headers[k] = v
 
-    # Determine provider based on path or headers (simplified logic)
-    # In a real app, we might have specific routes for each.
-    # Here we assume the client points to the correct endpoint on our proxy.
-    
-    target_url = "" # Kept one instance, removed the duplicate
-    if "v1/chat/completions" in path: # OpenAI
-        target_url = f"https://api.openai.com/{path}"
-        proxy_headers["Authorization"] = f"Bearer {settings.OPENAI_API_KEY}"
-    elif "v1/messages" in path: # Anthropic
-        target_url = f"https://api.anthropic.com/{path}"
-        proxy_headers["x-api-key"] = settings.ANTHROPIC_API_KEY
-        proxy_headers["anthropic-version"] = "2023-06-01"  # Required for Anthropic
-    elif "models" in path and ("generateContent" in path or "run_content" in path or "streamGenerateContent" in path): # Gemini
-        # Handles /v1/models/... and /v1beta/models/...
-        # Fix for clients like Chatbox putting http://localhost:8000/v1 as base URL for Gemini models
-        clean_path = path.replace("v1/v1beta/", "v1beta/").replace("v1/v1/", "v1/")
-        target_url = f"https://generativelanguage.googleapis.com/{clean_path}"
-        proxy_headers["x-goog-api-key"] = settings.GEMINI_API_KEY
-    else:
-        # Fallback to OpenAI style for other paths if key exists
-        target_url = f"https://api.openai.com/{path}"
-        if settings.OPENAI_API_KEY:
-            proxy_headers["Authorization"] = f"Bearer {settings.OPENAI_API_KEY}"
+    provider = resolve_provider(path, settings)
+    target_url = provider.target_url
+    proxy_headers.update(provider.auth_headers)
 
     # Append query parameters if present
     query_params = str(request.url.query)
@@ -75,13 +56,10 @@ async def proxy_unified(request: Request, path: str):
 
     client = ProxyClient.get_client()
     
-    # Check for stream parameter (OpenAI/Anthropic) or path (Gemini)
-    is_streaming = False
+    # Check for stream parameter (OpenAI/Anthropic) or provider-flagged streaming path (Gemini)
+    is_streaming = provider.is_streaming_path
     if payload and isinstance(payload, dict):
-        is_streaming = payload.get("stream", False)
-    
-    if "streamGenerateContent" in path:
-        is_streaming = True
+        is_streaming = is_streaming or payload.get("stream", False)
 
     try:
         # Bug 3: Perform request first to capture upstream status code before initializing response
@@ -115,8 +93,8 @@ async def proxy_unified(request: Request, path: str):
                 full_content = await resp.aread()
                 if resp.status_code == 200:
                     content_str = full_content.decode("utf-8")
-                    # Bug 1: Also offload de-anonymization if it's heavy
-                    content_str = await run_in_threadpool(anonymizer.deanonymize, content_str, request_id)
+                    mapping = state_manager.get_mapping(request_id)
+                    content_str = await run_in_threadpool(anonymizer.deanonymize, content_str, mapping)
                     full_content = content_str.encode("utf-8")
                 
                 # Cleanup state
@@ -175,14 +153,13 @@ def _anonymize_payload(payload: any, request_id: str) -> any:
     if not text_items:
         return payload
 
-    # 2. Batch anonymize
+    # 2. Batch anonymize — returns anonymized texts and the token→original mapping
     texts_to_process = [item[2] for item in text_items]
-    
-    # Check if anonymizer supports batching
-    if hasattr(anonymizer, "anonymize_batch"):
-        anonymized_texts = anonymizer.anonymize_batch(texts_to_process, request_id)
-    else:
-        anonymized_texts = [anonymizer.anonymize(t, request_id) for t in texts_to_process]
+    anonymized_texts, mapping = anonymizer.anonymize_batch(texts_to_process)
+
+    # Persist mapping to state so StreamHandler and deanonymize can resolve tokens
+    for token, original in mapping.items():
+        state_manager.set_mapping(request_id, token, original)
 
     # 3. Re-inject
     for (container, key, _), anonymized_val in zip(text_items, anonymized_texts):

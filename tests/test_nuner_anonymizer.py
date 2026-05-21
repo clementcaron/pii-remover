@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from src.proxy.state import StateManager
-
 
 def _make_anonymizer(model: MagicMock | None = None):
     """Return a NuNERAnonymizer backed by a mock GLiNER model."""
@@ -93,89 +91,65 @@ class TestMergeEntities:
 # --------------------------------------------------------------------------- #
 
 class TestDeanonymize:
-    def _anon_with_state(self, request_id: str, mapping: dict):
-        """Create anonymizer with pre-populated state."""
-        import src.engine.nuner as nuner_module
-
-        sm = StateManager()
-        for token, original in mapping.items():
-            sm.set_mapping(request_id, token, original)
-
-        anon = _make_anonymizer()
-        original_sm = nuner_module.state_manager
-        nuner_module.state_manager = sm
-        return anon, nuner_module, original_sm
-
     def test_delegates_to_token_replacer(self):
-        anon, mod, orig_sm = self._anon_with_state("r1", {"[PERSON_1]": "Alice"})
-        try:
-            assert anon.deanonymize("Hello [PERSON_1]!", "r1") == "Hello Alice!"
-        finally:
-            mod.state_manager = orig_sm
+        anon = _make_anonymizer()
+        assert anon.deanonymize("Hello [PERSON_1]!", {"[PERSON_1]": "Alice"}) == "Hello Alice!"
 
     def test_empty_text_unchanged(self):
-        anon, mod, orig_sm = self._anon_with_state("r3", {"[PERSON_1]": "Carol"})
-        try:
-            assert anon.deanonymize("", "r3") == ""
-        finally:
-            mod.state_manager = orig_sm
+        anon = _make_anonymizer()
+        assert anon.deanonymize("", {"[PERSON_1]": "Carol"}) == ""
 
     def test_no_mapping_returns_text_unchanged(self):
-        anon, mod, orig_sm = self._anon_with_state("r4", {})
-        try:
-            text = "No PII here"
-            assert anon.deanonymize(text, "r4") == text
-        finally:
-            mod.state_manager = orig_sm
+        anon = _make_anonymizer()
+        assert anon.deanonymize("No PII here", {}) == "No PII here"
 
 
 # --------------------------------------------------------------------------- #
-# anonymize_batch (model mocked)                                              #
+# anonymize_batch (model mocked)                                               #
 # --------------------------------------------------------------------------- #
 
 class TestAnonymizeBatch:
     def test_empty_list_returns_empty(self):
         anon = _make_anonymizer()
-        assert anon.anonymize_batch([], "req") == []
+        texts, mapping = anon.anonymize_batch([])
+        assert texts == []
+        assert mapping == {}
 
     def test_whitespace_only_texts_skipped(self):
         anon = _make_anonymizer()
-        result = anon.anonymize_batch(["  ", "\t"], "req")
-        # Model should not have been called
+        texts, mapping = anon.anonymize_batch(["  ", "\t"])
         anon.model.inference.assert_not_called()
-        assert result == ["  ", "\t"]
+        assert texts == ["  ", "\t"]
+        assert mapping == {}
 
     def test_detected_entity_replaced_by_token(self):
         model = MagicMock()
-        # Model returns one person entity
         model.inference.return_value = [
             [{"start": 11, "end": 16, "label": "person", "text": "Alice", "score": 0.95}]
         ]
         anon = _make_anonymizer(model)
-
-        import src.engine.nuner as nuner_module
-        sm = StateManager()
-        original_sm = nuner_module.state_manager
-        nuner_module.state_manager = sm
-        try:
-            result = anon.anonymize_batch(["My name is Alice."], "batch-req")
-            assert "Alice" not in result[0]
-            assert "[PERSON_1]" in result[0]
-            assert sm.get_original("batch-req", "[PERSON_1]") == "Alice"
-        finally:
-            nuner_module.state_manager = original_sm
+        texts, mapping = anon.anonymize_batch(["My name is Alice."])
+        assert "Alice" not in texts[0]
+        assert "[PERSON_1]" in texts[0]
+        assert mapping["[PERSON_1]"] == "Alice"
 
     def test_anonymize_delegates_to_batch(self):
         model = MagicMock()
         model.inference.return_value = [[]]
         anon = _make_anonymizer(model)
+        text, mapping = anon.anonymize("Hello world")
+        assert text == "Hello world"
+        assert mapping == {}
 
-        import src.engine.nuner as nuner_module
-        sm = StateManager()
-        original_sm = nuner_module.state_manager
-        nuner_module.state_manager = sm
-        try:
-            result = anon.anonymize("Hello world", "single-req")
-            assert result == "Hello world"
-        finally:
-            nuner_module.state_manager = original_sm
+    def test_mapping_covers_all_entities_in_batch(self):
+        """All entities across all texts in a batch end up in the returned mapping."""
+        model = MagicMock()
+        model.inference.return_value = [
+            [{"start": 0, "end": 5, "label": "person", "text": "Alice", "score": 0.9}],
+            [{"start": 5, "end": 8, "label": "person", "text": "Bob", "score": 0.9}],
+        ]
+        anon = _make_anonymizer(model)
+        _, mapping = anon.anonymize_batch(["Alice said", "Hello Bob"])
+        assert mapping.get("[PERSON_1]") == "Alice"
+        assert mapping.get("[PERSON_2]") == "Bob"
+

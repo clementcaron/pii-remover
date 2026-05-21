@@ -8,17 +8,18 @@ class AnonymizerBase(ABC):
     Abstract base class for all anonymization engines.
     """
     @abstractmethod
-    def anonymize(self, text: str, request_id: str) -> str:
+    def anonymize(self, text: str) -> tuple[str, dict[str, str]]:
         """
-        Detects PII in the given text and replaces it with tokens.
-        Updates the global state manager with the mapping.
+        Detects PII in *text* and replaces it with synthetic tokens.
+        Returns the anonymized text and the token→original mapping.
+        The caller is responsible for persisting the mapping.
         """
         pass
 
     @abstractmethod
-    def deanonymize(self, text: str, request_id: str) -> str:
+    def deanonymize(self, text: str, mapping: dict[str, str]) -> str:
         """
-        Replaces tokens in the given text with their original PII.
-        Uses the mapping from the state manager for the given request_id.
+        Replaces synthetic tokens in *text* with their original values
+        using the provided mapping.
         """
         pass
