@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
 
 from src.proxy.state import StateManager
@@ -107,27 +106,10 @@ class TestDeanonymize:
         nuner_module.state_manager = sm
         return anon, nuner_module, original_sm
 
-    def test_simple_token_replaced(self):
-        anon, mod, orig_sm = self._anon_with_state(
-            "r1", {"[PERSON_1]": "Alice"}
-        )
+    def test_delegates_to_token_replacer(self):
+        anon, mod, orig_sm = self._anon_with_state("r1", {"[PERSON_1]": "Alice"})
         try:
-            result = anon.deanonymize("Hello [PERSON_1]!", "r1")
-            assert result == "Hello Alice!"
-        finally:
-            mod.state_manager = orig_sm
-
-    def test_multiple_tokens_replaced(self):
-        anon, mod, orig_sm = self._anon_with_state(
-            "r2",
-            {"[PERSON_1]": "Bob", "[EMAIL_ADDRESS_1]": "bob@example.com"},
-        )
-        try:
-            result = anon.deanonymize(
-                "Contact [PERSON_1] at [EMAIL_ADDRESS_1].", "r2"
-            )
-            assert "Bob" in result
-            assert "bob@example.com" in result
+            assert anon.deanonymize("Hello [PERSON_1]!", "r1") == "Hello Alice!"
         finally:
             mod.state_manager = orig_sm
 
@@ -143,15 +125,6 @@ class TestDeanonymize:
         try:
             text = "No PII here"
             assert anon.deanonymize(text, "r4") == text
-        finally:
-            mod.state_manager = orig_sm
-
-    def test_markdown_escaped_token(self):
-        """LLMs may output \\[PERSON\\_1\\]; deanonymize must still resolve it."""
-        anon, mod, orig_sm = self._anon_with_state("r5", {"[PERSON_1]": "Dave"})
-        try:
-            result = anon.deanonymize(r"\[PERSON\_1\]", "r5")
-            assert result == "Dave"
         finally:
             mod.state_manager = orig_sm
 

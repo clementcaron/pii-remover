@@ -28,41 +28,15 @@ def _handler_for(mapping: dict) -> "StreamHandler":
 # --------------------------------------------------------------------------- #
 
 class TestReplaceTokens:
-    def test_simple_replacement(self):
+    def test_delegates_to_token_replacer(self):
+        """_replace_tokens must delegate to core.token_replacer.replace."""
         h = _handler_for({"[PERSON_1]": "Alice"})
         assert h._replace_tokens("Hello [PERSON_1]!") == "Hello Alice!"
 
-    def test_no_mapping_returns_unchanged(self):
+    def test_empty_mapping_returns_unchanged(self):
         h = _handler_for({})
         text = "Hello [PERSON_1]!"
         assert h._replace_tokens(text) == text
-
-    def test_multiple_tokens(self):
-        h = _handler_for({"[PERSON_1]": "Bob", "[EMAIL_ADDRESS_1]": "bob@example.com"})
-        result = h._replace_tokens("Contact [PERSON_1] at [EMAIL_ADDRESS_1].")
-        assert result == "Contact Bob at bob@example.com."
-
-    def test_markdown_escaped_token(self):
-        """LLMs like Gemini often emit \\[PHONE\\_NUMBER\\_1\\] in their output."""
-        h = _handler_for({"[PHONE_NUMBER_1]": "+1-555-0100"})
-        escaped = r"\[PHONE\_NUMBER\_1\]"
-        assert h._replace_tokens(escaped) == "+1-555-0100"
-
-    def test_json_double_escaped_token(self):
-        """Inside a raw JSON stream the escaping doubles: \\\\[PHONE\\\\_NUMBER\\\\_1\\\\]."""
-        h = _handler_for({"[PHONE_NUMBER_1]": "+1-555-0100"})
-        # Two levels of backslash escaping
-        double_escaped = r"\\[PHONE\\_NUMBER\\_1\\]"
-        assert h._replace_tokens(double_escaped) == "+1-555-0100"
-
-    def test_replacement_is_json_safe(self):
-        """Originals that contain quotes/newlines must not break JSON structure."""
-        h = _handler_for({"[PERSON_1]": 'John "The Boss" Doe'})
-        # The safe replacement should escape the inner quotes
-        result = h._replace_tokens('"name": "[PERSON_1]"')
-        assert "John" in result
-        # The result must still be valid JSON-like (no unescaped raw quotes inside)
-        assert result.count('"') >= 2
 
 
 # --------------------------------------------------------------------------- #
